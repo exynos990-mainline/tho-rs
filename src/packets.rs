@@ -2,21 +2,21 @@ use wincode::SchemaWrite;
 
 #[derive(SchemaWrite)]
 pub struct SessionPacket {
-	pub packet_type: i32,
-	pub packet_command: i32,
-	pub arg: i32,
+    pub packet_type: i32,
+    pub packet_command: i32,
+    pub arg: i32,
 }
 
 #[derive(SchemaWrite)]
 pub struct CommandPacket {
-	pub packet_type: i32,
-	pub packet_command: i32,
+    pub packet_type: i32,
+    pub packet_command: i32,
 }
 
 #[derive(SchemaWrite)]
 pub struct Session {
-	pub protocol_ver: u16,
-	pub flash_timeout: i32,
+    pub protocol_ver: u16,
+    pub flash_timeout: i32,
     pub flash_packet_size: i32,
     pub flash_sequence: i32,
 }
@@ -54,7 +54,13 @@ pub fn check_response(data: &[u8]) -> Result<(), Box<dyn core::error::Error>> {
         -5 => return Err(format!("Device returned error code: {} (Auth)", error_code).into()),
         -4 => return Err(format!("Device returned error code: {} (Write)", error_code).into()),
         -3 => return Err(format!("Device returned error code: {} (Erase)", error_code).into()),
-        -2 => return Err(format!("Device returned error code: {} (Write Protection)", error_code).into()),
+        -2 => {
+            return Err(format!(
+                "Device returned error code: {} (Write Protection)",
+                error_code
+            )
+            .into());
+        }
         _ => return Err(format!("Device returned unknown error code: {}", error_code).into()),
     }
 }
@@ -70,7 +76,7 @@ pub fn parse_session_response(data: &[u8]) -> Session {
             flash_timeout = 30000; // 30s
             flash_packet_size = 131072; // 128KiB
             flash_sequence = 240; // 30MiB
-        },
+        }
         2.. => {
             flash_timeout = 120000; // 2 Mins
             flash_packet_size = 1048576; // 1MiB
@@ -83,5 +89,5 @@ pub fn parse_session_response(data: &[u8]) -> Session {
         flash_timeout,
         flash_packet_size,
         flash_sequence,
-    }
+    };
 }

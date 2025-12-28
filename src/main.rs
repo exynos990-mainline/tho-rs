@@ -1,31 +1,32 @@
 use clap::Parser;
 
 mod device;
+mod packets;
 mod usb;
-use crate::usb::*;
+
 use crate::device::*;
+use crate::usb::*;
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
 struct Args {
-	/// Command (todo: another struct?)
-	#[arg(short, long)]
-	command: String,
+    /// Command (todo: another struct?)
+    #[arg(short, long)]
+    command: String,
 }
 
 fn print_banner() {
-	println!("{} {}", env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"));
-	println!("sammy flasher... but in RUST...");
+    println!("{} {}", env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"));
+    println!("sammy flasher... but in RUST...");
 }
 
-
 fn main() {
-	println!("Hello, world!");
+    println!("Hello, world!");
 
-	// let args = Args::parse();
-	// we can re-enable this once we actually get something to parse lol
+    // let args = Args::parse();
+    // we can re-enable this once we actually get something to parse lol
 
-	let mut dev = initialise_usb().expect("Something bad happened :(");
+    let mut dev = initialise_usb().expect("Something bad happened :(");
 
-	initialize(&mut dev);
+    initialize(&mut dev);
 }
