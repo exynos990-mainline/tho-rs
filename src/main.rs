@@ -7,6 +7,8 @@ mod usb;
 use crate::device::*;
 use crate::usb::*;
 
+pub type Result<T> = core::result::Result<T, Box<dyn core::error::Error>>;
+
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
 struct Args {
@@ -20,13 +22,15 @@ fn print_banner() {
     println!("sammy flasher... but in RUST...");
 }
 
-fn main() {
+fn main() -> Result<()> {
     println!("Hello, world!");
 
     // let args = Args::parse();
     // we can re-enable this once we actually get something to parse lol
 
-    let mut dev = initialise_usb().expect("Something bad happened :(");
+    let mut dev = initialise_usb()?;
 
-    initialize(&mut dev);
+    initialize(&mut dev)?;
+
+    Ok(())
 }
