@@ -1,5 +1,7 @@
 use wincode::SchemaWrite;
 
+use crate::Result;
+
 #[derive(SchemaWrite)]
 pub struct SessionPacket {
     pub packet_type: i32,
@@ -21,52 +23,40 @@ pub struct Session {
     pub flash_sequence: i32,
 }
 
-pub fn session_packet_to_bytes(packet: &SessionPacket) -> Vec<u8> {
-    let mut bytes = Vec::new();
+pub fn packet_to_bytes_pad<T: wincode::Serialize + wincode::SchemaWrite<Src = T>>(
+    packet: T,
+) -> Result<Vec<u8>> {
+    let size = 1024 - size_of::<T>();
 
-    bytes.extend_from_slice(&packet.packet_type.to_le_bytes());
-    bytes.extend_from_slice(&packet.packet_command.to_le_bytes());
-    bytes.extend_from_slice(&packet.arg.to_le_bytes());
-    bytes.extend_from_slice(&[0u8; 1012]);
+    let mut bytes = wincode::serialize(&packet)?;
+    bytes.resize(bytes.len() + size, 0);
 
-    return bytes;
+    Ok(bytes)
 }
 
-pub fn command_packet_to_bytes(packet: &CommandPacket) -> Vec<u8> {
-    let mut bytes = Vec::new();
-
-    bytes.extend_from_slice(&packet.packet_type.to_le_bytes());
-    bytes.extend_from_slice(&packet.packet_command.to_le_bytes());
-    bytes.extend_from_slice(&[0u8; 1016]);
-
-    return bytes;
-}
-
-pub fn check_response(data: &[u8]) -> Result<(), Box<dyn core::error::Error>> {
+pub fn check_response(data: &[u8]) -> Result<()> {
     if data[0] != 0xFF {
         return Ok(());
     }
 
-    let error_code = i32::from_le_bytes([data[1], data[2], data[3], data[4]]);
+    let error_code = i32::from_le_bytes(data[1..5].try_into()?);
     match error_code {
-        -7 => return Err(format!("Device returned error code: {} (Ext4)", error_code).into()),
-        -6 => return Err(format!("Device returned error code: {} (Size)", error_code).into()),
-        -5 => return Err(format!("Device returned error code: {} (Auth)", error_code).into()),
-        -4 => return Err(format!("Device returned error code: {} (Write)", error_code).into()),
-        -3 => return Err(format!("Device returned error code: {} (Erase)", error_code).into()),
-        -2 => {
-            return Err(format!(
-                "Device returned error code: {} (Write Protection)",
-                error_code
-            )
-            .into());
-        }
-        _ => return Err(format!("Device returned unknown error code: {}", error_code).into()),
+        -7 => Err(format!("Device returned error code: {} (Ext4)", error_code).into()),
+        -6 => Err(format!("Device returned error code: {} (Size)", error_code).into()),
+        -5 => Err(format!("Device returned error code: {} (Auth)", error_code).into()),
+        -4 => Err(format!("Device returned error code: {} (Write)", error_code).into()),
+        -3 => Err(format!("Device returned error code: {} (Erase)", error_code).into()),
+        -2 => Err(format!(
+            "Device returned error code: {} (Write Protection)",
+            error_code
+        )
+        .into()),
+        _ => Err(format!("Device returned unknown error code: {}", error_code).into()),
     }
 }
 
-pub fn parse_session_response(data: &[u8]) -> Session {
-    let protocol_ver = u16::from_le_bytes([data[6], data[7]]);
+pub fn parse_session_response(data: &[u8]) -> Result<Session> {
+    let protocol_ver = u16::from_le_bytes(data[6..8].try_into()?);
     let flash_timeout;
     let flash_packet_size;
     let flash_sequence;
@@ -84,10 +74,10 @@ pub fn parse_session_response(data: &[u8]) -> Session {
         }
     }
 
-    return Session {
+    Ok(Session {
         protocol_ver,
         flash_timeout,
         flash_packet_size,
         flash_sequence,
-    };
+    })
 }
