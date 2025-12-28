@@ -16,25 +16,28 @@ pub fn reboot(device_handle: &mut rusb::DeviceHandle<rusb::GlobalContext>) -> Re
         usb_bulk_read(device_handle).map_err(|e| format!("Failed to read response: {e:?}"))?;
     check_response(&raw_response)?;
 
-    return Ok(());
+    Ok(())
 }
 
 fn handshake(device_handle: &mut rusb::DeviceHandle<rusb::GlobalContext>) -> Result<()> {
     usb_bulk_transfer(device_handle, b"ODIN")
         .map_err(|e| format!("Failed to send handshake packet: {e:?}"))?;
 
-    let raw_response =
-        usb_bulk_read(device_handle).map_err(|e| format!("Failed to read response: {e:?}"))?;
     let response =
-        String::from_utf8(raw_response).expect("Invalid response (not valid utf-8 bytes).");
+        usb_bulk_read(device_handle).map_err(|e| format!("Failed to read response: {e:?}"))?;
 
-    if response != "LOKE" {
-        println!("Handshake failed: expected LOKE, got {}", response);
+    if response != b"LOKE" {
+        println!(
+            "Handshake failed: expected LOKE, got {}",
+            String::from_utf8_lossy(&response)
+        );
+
         return Err("Handshake failed.".into());
     }
 
     println!("Hand shook");
-    return Ok(());
+
+    Ok(())
 }
 
 fn begin_session(device_handle: &mut rusb::DeviceHandle<rusb::GlobalContext>) -> Result<()> {
@@ -70,7 +73,8 @@ fn begin_session(device_handle: &mut rusb::DeviceHandle<rusb::GlobalContext>) ->
             usb_bulk_read(device_handle).map_err(|e| format!("Failed to read response: {e:?}"))?;
         check_response(&raw_response)?;
     }
-    return Ok(());
+
+    Ok(())
 }
 
 fn end_session(device_handle: &mut rusb::DeviceHandle<rusb::GlobalContext>) -> Result<()> {
@@ -86,7 +90,7 @@ fn end_session(device_handle: &mut rusb::DeviceHandle<rusb::GlobalContext>) -> R
         usb_bulk_read(device_handle).map_err(|e| format!("Failed to read response: {e:?}"))?;
     check_response(&raw_response)?;
 
-    return Ok(());
+    Ok(())
 }
 
 pub fn initialize(device_handle: &mut rusb::DeviceHandle<rusb::GlobalContext>) -> Result<()> {
