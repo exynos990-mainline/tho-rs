@@ -25,8 +25,7 @@ fn main() {
 	// let args = Args::parse();
 	// we can re-enable this once we actually get something to parse lol
 
-	let dev = initialise_usb().expect("Something bad happened :(");
+	let mut dev = initialise_usb().expect("Something bad happened :(");
 
-
-	initialize(dev);
+	initialize(&mut dev);
 }
