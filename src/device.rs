@@ -1,10 +1,9 @@
+use crate::Result;
 use crate::packets::*;
 use crate::usb_bulk_read;
 use crate::usb_bulk_transfer;
 
-pub fn reboot(
-    device_handle: &mut rusb::DeviceHandle<rusb::GlobalContext>,
-) -> Result<(), Box<dyn core::error::Error>> {
+pub fn reboot(device_handle: &mut rusb::DeviceHandle<rusb::GlobalContext>) -> Result<()> {
     let packet = CommandPacket {
         packet_type: 0x67,
         packet_command: 0x01,
@@ -20,9 +19,7 @@ pub fn reboot(
     return Ok(());
 }
 
-fn handshake(
-    device_handle: &mut rusb::DeviceHandle<rusb::GlobalContext>,
-) -> Result<(), Box<dyn core::error::Error>> {
+fn handshake(device_handle: &mut rusb::DeviceHandle<rusb::GlobalContext>) -> Result<()> {
     usb_bulk_transfer(device_handle, b"ODIN")
         .map_err(|e| format!("Failed to send handshake packet: {e:?}"))?;
 
@@ -40,9 +37,7 @@ fn handshake(
     return Ok(());
 }
 
-fn begin_session(
-    device_handle: &mut rusb::DeviceHandle<rusb::GlobalContext>,
-) -> Result<(), Box<dyn core::error::Error>> {
+fn begin_session(device_handle: &mut rusb::DeviceHandle<rusb::GlobalContext>) -> Result<()> {
     let packet = SessionPacket {
         packet_type: 0x64,
         packet_command: 0x00,
@@ -78,9 +73,7 @@ fn begin_session(
     return Ok(());
 }
 
-fn end_session(
-    device_handle: &mut rusb::DeviceHandle<rusb::GlobalContext>,
-) -> Result<(), Box<dyn core::error::Error>> {
+fn end_session(device_handle: &mut rusb::DeviceHandle<rusb::GlobalContext>) -> Result<()> {
     let packet = CommandPacket {
         packet_type: 0x67,
         packet_command: 0x00,
@@ -96,10 +89,11 @@ fn end_session(
     return Ok(());
 }
 
-pub fn initialize(device_handle: &mut rusb::DeviceHandle<rusb::GlobalContext>) -> bool {
-    handshake(device_handle);
-    begin_session(device_handle);
+pub fn initialize(device_handle: &mut rusb::DeviceHandle<rusb::GlobalContext>) -> Result<()> {
+    handshake(device_handle)?;
+    begin_session(device_handle)?;
     //end_session(device_handle);
     //reboot(device_handle).expect("Failed to reboot device.");
-    return false;
+
+    Ok(())
 }
