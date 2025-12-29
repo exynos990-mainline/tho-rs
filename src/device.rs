@@ -5,8 +5,10 @@ use crate::device_information::DeviceInfoType;
 use crate::device_information::DeviceInfoData;
 use crate::pit::parse_pit;
 use crate::pit::Pit;
+use crate::pit::BinaryType;
 use crate::usb_bulk_read;
 use crate::usb_bulk_transfer;
+use std::fs;
 
 pub fn dump_device_info(device_handle: &mut rusb::DeviceHandle<rusb::GlobalContext>) -> Result<Vec<DeviceInfoData>> {
     let packet = CommandPacket {
@@ -35,7 +37,7 @@ pub fn dump_device_info(device_handle: &mut rusb::DeviceHandle<rusb::GlobalConte
         let packet = SessionPacket {
             packet_type: 0x69,
             packet_command: 0x01,
-            arg: n as i32
+            arg: n
         };
 
         usb_bulk_transfer(device_handle, &packet_to_bytes_pad(packet)?)
@@ -90,7 +92,7 @@ pub fn dump_pit(device_handle: &mut rusb::DeviceHandle<rusb::GlobalContext>) -> 
         let packet = SessionPacket {
             packet_type: 0x65,
             packet_command: 0x02,
-            arg: n as i32
+            arg: n
         };
 
         usb_bulk_transfer(device_handle, &packet_to_bytes_pad(packet)?)
@@ -123,6 +125,7 @@ pub fn reboot(device_handle: &mut rusb::DeviceHandle<rusb::GlobalContext>) -> Re
         packet_type: 0x67,
         packet_command: 0x01,
     };
+
     println!("Sending reboot command");
     usb_bulk_transfer(device_handle, &packet_to_bytes_pad(packet)?)
         .map_err(|e| format!("Failed to send reboot packet: {e:?}"))?;
@@ -157,7 +160,99 @@ fn handshake(device_handle: &mut rusb::DeviceHandle<rusb::GlobalContext>) -> Res
     Ok(())
 }
 
-fn begin_session(device_handle: &mut rusb::DeviceHandle<rusb::GlobalContext>) -> Result<()> {
+fn flash_device(device_handle: &mut rusb::DeviceHandle<rusb::GlobalContext>, session: Session, data: Vec<u8>, partition_id: u32) -> Result<()> {
+    let data_length = data.len();
+    let sequence_size = session.flash_packet_size * session.flash_sequence;
+
+    // TODO: LZ4 Detection and support
+    let packet = CommandPacket {
+        packet_type: 0x66,
+        packet_command: 0x00,
+    };
+
+    println!("Sending flash request command");
+    usb_bulk_transfer(device_handle, &packet_to_bytes_pad(packet)?)
+        .map_err(|e| format!("Failed to send flash request packet: {e:?}"))?;
+
+    let raw_response =
+        usb_bulk_read(device_handle).map_err(|e| format!("Failed to read response: {e:?}"))?;
+
+    check_response(&raw_response)?;
+
+    for (seq_index, sequence) in data.chunks(sequence_size as usize).enumerate() {
+        let real_size = sequence.len();
+        let aligned_size = real_size.next_multiple_of(session.flash_packet_size as usize);
+        let is_last_sequence = seq_index + 1 == data_length.div_ceil(sequence_size as usize);
+
+        let packet = SessionPacket {
+            packet_type: 0x66,
+            packet_command: 0x02,
+            arg: aligned_size as u32,
+        };
+
+        println!("Sending flash sequence request command");
+        usb_bulk_transfer(device_handle, &packet_to_bytes_pad(packet)?)
+            .map_err(|e| format!("Failed to send flash sequence request packet: {e:?}"))?;
+
+        let raw_response =
+            usb_bulk_read(device_handle).map_err(|e| format!("Failed to read response: {e:?}"))?;
+
+        check_response(&raw_response)?;
+
+        let chunks = sequence.chunks_exact(session.flash_packet_size as usize);
+
+        for (chunk_index, chunk) in chunks.clone().enumerate() {
+            println!("Sending file part {chunk_index}");
+            usb_bulk_transfer(device_handle, chunk)
+                .map_err(|e| format!("Failed to send flash sequence request packet: {e:?}"))?;
+
+            let raw_response =
+                usb_bulk_read(device_handle).map_err(|e| format!("Failed to read response: {e:?}"))?;
+
+            check_response(&raw_response)?;
+        }
+
+        let remainder = chunks.remainder();
+        if !remainder.is_empty() {
+            let chunk_index = (chunks.len() / session.flash_packet_size as usize) + 1;
+            let mut padded = vec![0u8; session.flash_packet_size as usize];
+            padded[..remainder.len()].copy_from_slice(remainder);
+
+            println!("Sending last file part {chunk_index}");
+
+            usb_bulk_transfer(device_handle, &padded)
+                .map_err(|e| format!("Failed to send flash sequence request packet: {e:?}"))?;
+
+            let raw_response =
+                usb_bulk_read(device_handle).map_err(|e| format!("Failed to read response: {e:?}"))?;
+
+            check_response(&raw_response)?;
+        }
+
+        let packet = APFlashSequencePacket {
+            packet_type: 0x66,
+            packet_command: 0x03,
+            reserved: 0x00,
+            sequence_len: real_size as u32,
+            binary_type: BinaryType::Ap,
+            device_type: 0x08,
+            partition_identifier: 13,
+            is_last_sequence: is_last_sequence as u32
+        };
+
+        usb_bulk_transfer(device_handle, &packet_to_bytes_pad(packet)?)
+            .map_err(|e| format!("Failed to send flash sequence end request packet: {e:?}"))?;
+
+        let raw_response =
+            usb_bulk_read(device_handle).map_err(|e| format!("Failed to read response: {e:?}"))?;
+
+        check_response(&raw_response)?;
+    }
+
+    Ok(())
+}
+
+fn begin_session(device_handle: &mut rusb::DeviceHandle<rusb::GlobalContext>) -> Result<Session> {
     let packet = SessionPacket {
         packet_type: 0x64,
         packet_command: 0x00,
@@ -197,7 +292,7 @@ fn begin_session(device_handle: &mut rusb::DeviceHandle<rusb::GlobalContext>) ->
         check_response(&raw_response)?;
     }
 
-    Ok(())
+    Ok(session)
 }
 
 fn end_session(device_handle: &mut rusb::DeviceHandle<rusb::GlobalContext>) -> Result<()> {
@@ -205,6 +300,7 @@ fn end_session(device_handle: &mut rusb::DeviceHandle<rusb::GlobalContext>) -> R
         packet_type: 0x67,
         packet_command: 0x00,
     };
+
     println!("Ending session");
     usb_bulk_transfer(device_handle, &packet_to_bytes_pad(&packet)?)
         .map_err(|e| format!("Failed to send end session packet: {e:?}"))?;
@@ -218,7 +314,7 @@ fn end_session(device_handle: &mut rusb::DeviceHandle<rusb::GlobalContext>) -> R
 
 pub fn initialize(device_handle: &mut rusb::DeviceHandle<rusb::GlobalContext>) -> Result<()> {
     handshake(device_handle)?;
-    begin_session(device_handle)?;
+    let session = begin_session(device_handle)?;
 
     for device_info_item in dump_device_info(device_handle)? {
         if device_info_item.info_type == DeviceInfoType::ModelName {
@@ -232,9 +328,12 @@ pub fn initialize(device_handle: &mut rusb::DeviceHandle<rusb::GlobalContext>) -
         println!("will dump info later lol");
     } else {
         for entry in pit.entries_v2 {
-            println!("Name: {} Start Block: {}, Size (Blocks): {}, Lun: {}", String::from_utf8_lossy(&entry.partition_name), entry.start_block, entry.block_cnt, entry.lun);
+            println!("Name: {} Start Block: {}, Size (Blocks): {}, Lun: {}, Identifier: {}, Type: {}", String::from_utf8_lossy(&entry.partition_name), entry.start_block, entry.block_cnt, entry.lun, entry.partition_identifier, entry.binary_type as u32);
         }
     }
+    println!("Flashing lk3rd v1.0");
+    let lk3rd = fs::read("lk3rd-x1s.img")?;
+    flash_device(device_handle, session, lk3rd, 13);
     end_session(device_handle);
     reboot(device_handle).expect("Failed to reboot device.");
 

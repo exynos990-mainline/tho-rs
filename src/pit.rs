@@ -1,13 +1,13 @@
 use wincode::SchemaRead;
+use wincode::SchemaWrite;
 
+#[derive(SchemaRead, SchemaWrite, PartialEq)]
 #[repr(u32)]
-#[derive(SchemaRead, PartialEq)]
 pub enum BinaryType {
     Ap,
     Cp
 }
 
-#[repr(u32)]
 #[derive(SchemaRead, PartialEq)]
 pub enum DeviceTypeV1 {
     OneNand,

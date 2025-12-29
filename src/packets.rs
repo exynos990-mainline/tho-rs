@@ -2,25 +2,39 @@ use wincode::SchemaWrite;
 
 use crate::Result;
 
+use crate::pit::BinaryType;
+
 #[derive(SchemaWrite)]
 pub struct SessionPacket {
-    pub packet_type: i32,
-    pub packet_command: i32,
-    pub arg: i32,
+    pub packet_type: u32,
+    pub packet_command: u32,
+    pub arg: u32,
 }
 
 #[derive(SchemaWrite)]
 pub struct CommandPacket {
-    pub packet_type: i32,
-    pub packet_command: i32,
+    pub packet_type: u32,
+    pub packet_command: u32,
+}
+
+#[derive(SchemaWrite)]
+pub struct APFlashSequencePacket {
+    pub packet_type: u32,
+    pub packet_command: u32,
+    pub reserved: u32,
+    pub sequence_len: u32,
+    pub binary_type: BinaryType,
+    pub device_type: u32,
+    pub partition_identifier: u32,
+    pub is_last_sequence: u32,
 }
 
 #[derive(SchemaWrite)]
 pub struct Session {
     pub protocol_ver: u16,
-    pub flash_timeout: i32,
-    pub flash_packet_size: i32,
-    pub flash_sequence: i32,
+    pub flash_timeout: u32,
+    pub flash_packet_size: u32,
+    pub flash_sequence: u32,
 }
 
 pub fn packet_to_bytes_pad<T: wincode::Serialize + wincode::SchemaWrite<Src = T>>(
