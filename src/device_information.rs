@@ -28,12 +28,7 @@ pub struct DeviceInfoData {
     pub data: Vec<u8>,
 }
 
-/// Returned and used internally, not by device.
-pub struct DeviceInfo {
-    pub device_info: Vec<DeviceInfoData>,
-}
-
-pub fn parse_device_info_bytes(device_info_buffer: &Vec<u8>) -> Result<DeviceInfo, Box<dyn core::error::Error>> {
+pub fn parse_device_info_bytes(device_info_buffer: &Vec<u8>) -> Result<Vec<DeviceInfoData>, Box<dyn core::error::Error>> {
     let header = wincode::deserialize::<DeviceInfoHeader>(device_info_buffer).unwrap();
     let mut locations = Vec::<DeviceInfoLocation>::new();
     let mut data_blocks = Vec::<DeviceInfoData>::new();
@@ -43,7 +38,7 @@ pub fn parse_device_info_bytes(device_info_buffer: &Vec<u8>) -> Result<DeviceInf
         return Err("Wrong magic".into());
     }
 
-    for n in 0..header.item_count {
+    for _n in 0..header.item_count {
         let location = wincode::deserialize::<DeviceInfoLocation>(&device_info_buffer[position..]).unwrap();
         position += 12;
         locations.push(location);
@@ -62,7 +57,5 @@ pub fn parse_device_info_bytes(device_info_buffer: &Vec<u8>) -> Result<DeviceInf
         data_blocks.push(deviceinfo_data);
     }
 
-    Ok(DeviceInfo {
-        device_info: data_blocks,
-    })
+    Ok(data_blocks)
 }

@@ -4,6 +4,7 @@ mod device;
 mod packets;
 mod usb;
 mod device_information;
+mod pit;
 
 use crate::device::*;
 use crate::usb::*;
