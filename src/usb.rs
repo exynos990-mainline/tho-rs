@@ -59,3 +59,23 @@ pub fn usb_bulk_read(
         Err(e) => Err(format!("Bulk read error: {e:?}").into()),
     }
 }
+
+/// Does a USB bulk read with a timeout param, returns a tuple of (status, bytes).
+pub fn usb_bulk_read_timeout(
+    device_handle: &mut rusb::DeviceHandle<rusb::GlobalContext>,
+    timeout: Duration
+) -> Result<Vec<u8>> {
+    let mut buffer: Vec<u8> = vec![0u8; 512];
+
+    match device_handle.read_bulk(0x81, &mut buffer, timeout) {
+        Ok(bytes_read) => {
+            if bytes_read > 0 {
+                buffer.truncate(bytes_read);
+                Ok(buffer)
+            } else {
+                Err("bytes_read <= 0".into())
+            }
+        }
+        Err(e) => Err(format!("Bulk read error: {e:?}").into()),
+    }
+}

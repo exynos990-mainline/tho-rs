@@ -7,8 +7,10 @@ use crate::pit::parse_pit;
 use crate::pit::Pit;
 use crate::pit::BinaryType;
 use crate::usb_bulk_read;
+use crate::usb_bulk_read_timeout;
 use crate::usb_bulk_transfer;
 use std::fs;
+use std::time::Duration;
 
 pub fn dump_device_info(device_handle: &mut rusb::DeviceHandle<rusb::GlobalContext>) -> Result<Vec<DeviceInfoData>> {
     let packet = CommandPacket {
@@ -210,11 +212,16 @@ fn flash_device(device_handle: &mut rusb::DeviceHandle<rusb::GlobalContext>, ses
                 usb_bulk_read(device_handle).map_err(|e| format!("Failed to read response: {e:?}"))?;
 
             check_response(&raw_response)?;
+
+            let device_chunk_index = u32::from_le_bytes(raw_response[4..8].try_into().unwrap());
+            if device_chunk_index != chunk_index as u32 {
+                return Err(format!("Expected packet index {chunk_index}, bootloader returned {device_chunk_index}").into());
+            }
         }
 
         let remainder = chunks.remainder();
         if !remainder.is_empty() {
-            let chunk_index = (chunks.len() / session.flash_packet_size as usize) + 1;
+            let chunk_index = chunks.len();
             let mut padded = vec![0u8; session.flash_packet_size as usize];
             padded[..remainder.len()].copy_from_slice(remainder);
 
@@ -227,8 +234,14 @@ fn flash_device(device_handle: &mut rusb::DeviceHandle<rusb::GlobalContext>, ses
                 usb_bulk_read(device_handle).map_err(|e| format!("Failed to read response: {e:?}"))?;
 
             check_response(&raw_response)?;
+
+            let device_chunk_index = u32::from_le_bytes(raw_response[4..8].try_into().unwrap());
+            if device_chunk_index != chunk_index as u32 {
+                return Err(format!("Expected packet index {chunk_index}, bootloader returned {device_chunk_index}").into());
+            }
         }
 
+        // TODO: Unhardcode and add MODEM flash sequence packet
         let packet = APFlashSequencePacket {
             packet_type: 0x66,
             packet_command: 0x03,
@@ -244,7 +257,7 @@ fn flash_device(device_handle: &mut rusb::DeviceHandle<rusb::GlobalContext>, ses
             .map_err(|e| format!("Failed to send flash sequence end request packet: {e:?}"))?;
 
         let raw_response =
-            usb_bulk_read(device_handle).map_err(|e| format!("Failed to read response: {e:?}"))?;
+            usb_bulk_read_timeout(device_handle, Duration::from_millis(session.flash_timeout as u64)).map_err(|e| format!("Failed to read response: {e:?}"))?;
 
         check_response(&raw_response)?;
     }
