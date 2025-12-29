@@ -3,6 +3,7 @@ use clap::Parser;
 mod device;
 mod packets;
 mod usb;
+mod device_information;
 
 use crate::device::*;
 use crate::usb::*;
