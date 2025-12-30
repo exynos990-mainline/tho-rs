@@ -3,9 +3,10 @@ use crate::packets::*;
 use crate::device_information::parse_device_info_bytes;
 use crate::device_information::DeviceInfoType;
 use crate::device_information::DeviceInfoData;
-use crate::pit::parse_pit;
-use crate::pit::Pit;
+use crate::pit::Partition;
 use crate::pit::BinaryType;
+use crate::pit::parse_pit;
+use crate::pit::search_for_partition;
 use crate::usb_bulk_read;
 use crate::usb_bulk_read_timeout;
 use crate::usb_bulk_transfer;
@@ -67,7 +68,7 @@ pub fn dump_device_info(device_handle: &mut rusb::DeviceHandle<rusb::GlobalConte
     Ok(device_info)
 }
 
-pub fn dump_pit(device_handle: &mut rusb::DeviceHandle<rusb::GlobalContext>) -> Result<Pit> {
+pub fn dump_pit(device_handle: &mut rusb::DeviceHandle<rusb::GlobalContext>) -> Result<Vec<Partition>> {
     let packet = CommandPacket {
         packet_type: 0x65,
         packet_command: 0x01,
@@ -118,8 +119,8 @@ pub fn dump_pit(device_handle: &mut rusb::DeviceHandle<rusb::GlobalContext>) -> 
         usb_bulk_read(device_handle).map_err(|e| format!("Failed to read response: {e:?}"))?;
 
     check_response(&raw_response)?;
-    let pit = parse_pit(&pit_buffer)?;
-    Ok(pit)
+    let partition_table = parse_pit(&pit_buffer)?;
+    Ok(partition_table)
 }
 
 pub fn reboot(device_handle: &mut rusb::DeviceHandle<rusb::GlobalContext>) -> Result<()> {
@@ -162,7 +163,7 @@ fn handshake(device_handle: &mut rusb::DeviceHandle<rusb::GlobalContext>) -> Res
     Ok(())
 }
 
-fn flash_device(device_handle: &mut rusb::DeviceHandle<rusb::GlobalContext>, session: Session, data: Vec<u8>, partition_id: u32) -> Result<()> {
+fn flash_device(device_handle: &mut rusb::DeviceHandle<rusb::GlobalContext>, session: Session, data: Vec<u8>, partition: &Partition) -> Result<()> {
     let data_length = data.len();
     let sequence_size = session.flash_packet_size * session.flash_sequence;
 
@@ -241,15 +242,15 @@ fn flash_device(device_handle: &mut rusb::DeviceHandle<rusb::GlobalContext>, ses
             }
         }
 
-        // TODO: Unhardcode and add MODEM flash sequence packet
+        // TODO: Add MODEM flash sequence packet
         let packet = APFlashSequencePacket {
             packet_type: 0x66,
             packet_command: 0x03,
             reserved: 0x00,
             sequence_len: real_size as u32,
-            binary_type: BinaryType::Ap,
+            binary_type: partition.binary_type,
             device_type: 0x08,
-            partition_identifier: 13,
+            partition_identifier: partition.partition_identifier,
             is_last_sequence: is_last_sequence as u32
         };
 
@@ -335,18 +336,16 @@ pub fn initialize(device_handle: &mut rusb::DeviceHandle<rusb::GlobalContext>) -
         }
     }
 
-    let pit = dump_pit(device_handle)?;
-    println!("Available Partitions: ");
-    if pit.is_v1 {
-        println!("will dump info later lol");
-    } else {
-        for entry in pit.entries_v2 {
-            println!("Name: {} Start Block: {}, Size (Blocks): {}, Lun: {}, Identifier: {}, Type: {}", String::from_utf8_lossy(&entry.partition_name), entry.start_block, entry.block_cnt, entry.lun, entry.partition_identifier, entry.binary_type as u32);
-        }
-    }
+    let partitions = dump_pit(device_handle)?;
     println!("Flashing lk3rd v1.0");
     let lk3rd = fs::read("lk3rd-x1s.img")?;
-    flash_device(device_handle, session, lk3rd, 13);
+    let boot = search_for_partition("BOOT", &partitions)?;
+    println!("Available Partitions: ");
+    for partition in partitions {
+        println!("Name: {} Size (Blocks): {}, Identifier: {}, Type: {}, Flash File Name: {}", String::from_utf8_lossy(&partition.partition_name), partition.partition_size, partition.partition_identifier, partition.binary_type as u32, String::from_utf8_lossy(&partition.file_name));
+    }
+    println!("found boot");
+    flash_device(device_handle, session, lk3rd, &boot);
     end_session(device_handle);
     reboot(device_handle).expect("Failed to reboot device.");
 

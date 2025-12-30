@@ -1,7 +1,7 @@
 use wincode::SchemaRead;
 use wincode::SchemaWrite;
 
-#[derive(SchemaRead, SchemaWrite, PartialEq)]
+#[derive(SchemaRead, SchemaWrite, PartialEq, Clone, Copy)]
 #[repr(u32)]
 pub enum BinaryType {
     Ap,
@@ -109,11 +109,14 @@ pub struct PitEntryV2 {
     pub delta: [u8; 32],
 }
 
-/// Used internally, someone please polish
-pub struct Pit {
-    pub is_v1: bool,
-    pub entries_v1: Vec<PitEntryV1>,
-    pub entries_v2: Vec<PitEntryV2>,
+/// Used internally
+#[derive(Clone)]
+pub struct Partition {
+	pub binary_type: BinaryType,
+    pub partition_identifier: u32,
+    pub partition_name: [u8; 32],
+    pub file_name: [u8; 32],
+	pub partition_size: u32,
 }
 
 /// Check if block info is equal between 2 partitions, V1 has it hardcoded to a constant blocksize, whereas V2 doesn't as it uses it as a partition start offset.
@@ -147,10 +150,9 @@ fn parse_entries_v2(pit_buffer: &Vec<u8>, partition_cnt: u32) -> Vec<PitEntryV2>
     return entries;
 }
 
-pub fn parse_pit(pit_buffer: &Vec<u8>) -> Result<Pit, Box<dyn core::error::Error>>{
+pub fn parse_pit(pit_buffer: &Vec<u8>) -> Result<Vec<Partition>, Box<dyn core::error::Error>>{
     let header = wincode::deserialize::<PitHeader>(pit_buffer).unwrap();
-    let mut entries_v1 = Vec::<PitEntryV1>::new();
-    let mut entries_v2 = Vec::<PitEntryV2>::new();
+	let mut partition_entries = Vec::<Partition>::new();
 
     if header.magic != 0x12349876 {
         return Err("Wrong magic".into());
@@ -163,14 +165,40 @@ pub fn parse_pit(pit_buffer: &Vec<u8>) -> Result<Pit, Box<dyn core::error::Error
     let is_v1 = is_pit_v1(pit_buffer);
 
     if is_v1 {
-        entries_v1 = parse_entries_v1(pit_buffer, header.partition_cnt);
+        let entries = parse_entries_v1(pit_buffer, header.partition_cnt);       
+		
+		for entry in entries {
+			partition_entries.push(Partition {
+				binary_type: entry.binary_type,
+				partition_identifier: entry.partition_identifier,
+				partition_name: entry.partition_name,
+				file_name: entry.file_name,
+				partition_size: entry.block_cnt,
+			});
+		}
     } else {
-        entries_v2 = parse_entries_v2(pit_buffer, header.partition_cnt);
-    }
+        let entries = parse_entries_v2(pit_buffer, header.partition_cnt);
 
-    Ok(Pit{
-        is_v1: is_v1,
-        entries_v1: entries_v1,
-        entries_v2: entries_v2,
-    })
+		for entry in entries {
+			partition_entries.push(Partition {
+				binary_type: entry.binary_type,
+				partition_identifier: entry.partition_identifier,
+				partition_name: entry.partition_name,
+				file_name: entry.file_name,
+				partition_size: entry.block_cnt,
+			});
+		}
+	}
+
+	Ok(partition_entries)
+}
+
+pub fn search_for_partition(partition_name: &str, partition_table: &Vec<Partition>) -> Result<Partition, Box<dyn core::error::Error>> {
+	for partition in partition_table {
+		if String::from_utf8_lossy(&partition.partition_name).trim_end_matches('\0').to_lowercase() == partition_name.to_lowercase() {
+			return Ok(partition.clone());
+		}
+	}
+
+	Err("Partition not found".into())
 }
