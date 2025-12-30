@@ -18,6 +18,13 @@ pub fn initialise_usb() -> USBResult {
                     .map_err(|e| format!("Failed to open device: {e:?}"))?;
                 handle.claim_interface(1)?;
 
+                // on Linux and BSDs we need to detach the kernel driver here
+                if rusb::supports_detach_kernel_driver() {
+                    let _ = handle
+                            .detach_kernel_driver(1)
+                            .map_err(|e| eprintln!("Failed to detach kernel driver: {}", e));
+                }
+
                 return Ok(handle);
             }
         }
