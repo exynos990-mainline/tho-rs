@@ -7,6 +7,7 @@ use crate::pit::Partition;
 use crate::pit::BinaryType;
 use crate::pit::parse_pit;
 use crate::pit::search_for_partition;
+use crate::file_type_detection::is_file_lz4;
 use crate::usb_bulk_read;
 use crate::usb_bulk_read_timeout;
 use crate::usb_bulk_transfer;
@@ -166,11 +167,21 @@ fn handshake(device_handle: &mut rusb::DeviceHandle<rusb::GlobalContext>) -> Res
 fn flash_device(device_handle: &mut rusb::DeviceHandle<rusb::GlobalContext>, session: Session, data: Vec<u8>, partition: &Partition) -> Result<()> {
     let data_length = data.len();
     let sequence_size = session.flash_packet_size * session.flash_sequence;
+    let is_lz4 = is_file_lz4(&data);
 
-    // TODO: LZ4 Detection and support
+    if is_lz4 {
+        println!("Detected LZ4 compressed image");
+        println!("Compression supported by device: {}", session.compression_supported);
+
+        if session.compression_supported == false {
+            println!("LZ4 file being flash under a protocol that doesn't support direct LZ4 flashes.");
+            return Err("LZ4 file being flash under a protocol that doesn't support direct LZ4 flashes.".into()); // TODO: handle nicer
+        }
+    }
+
     let packet = CommandPacket {
         packet_type: 0x66,
-        packet_command: 0x00,
+        packet_command: if is_lz4 {0x05} else {0x00},
     };
 
     println!("Sending flash request command");
@@ -189,7 +200,7 @@ fn flash_device(device_handle: &mut rusb::DeviceHandle<rusb::GlobalContext>, ses
 
         let packet = SessionPacket {
             packet_type: 0x66,
-            packet_command: 0x02,
+            packet_command: if is_lz4 {0x02} else {0x06},
             arg: aligned_size as u32,
         };
 
@@ -242,25 +253,44 @@ fn flash_device(device_handle: &mut rusb::DeviceHandle<rusb::GlobalContext>, ses
             }
         }
 
-        // TODO: Add MODEM flash sequence packet
-        let packet = APFlashSequencePacket {
-            packet_type: 0x66,
-            packet_command: 0x03,
-            reserved: 0x00,
-            sequence_len: real_size as u32,
-            binary_type: partition.binary_type,
-            device_type: 0x08,
-            partition_identifier: partition.partition_identifier,
-            is_last_sequence: is_last_sequence as u32
-        };
+        if partition.binary_type == BinaryType::Cp {
+            let packet = CPFlashSequencePacket {
+                packet_type: 0x66,
+                packet_command: if is_lz4 {0x07} else {0x03},
+                reserved: 0x01,
+                sequence_len: real_size as u32,
+                binary_type: partition.binary_type,
+                device_type: partition.device_type,
+                is_last_sequence: is_last_sequence as u32
+            };
 
-        usb_bulk_transfer(device_handle, &packet_to_bytes_pad(packet)?)
-            .map_err(|e| format!("Failed to send flash sequence end request packet: {e:?}"))?;
+            usb_bulk_transfer(device_handle, &packet_to_bytes_pad(packet)?)
+                .map_err(|e| format!("Failed to send flash sequence end request packet (CP): {e:?}"))?;
 
-        let raw_response =
-            usb_bulk_read_timeout(device_handle, Duration::from_millis(session.flash_timeout as u64)).map_err(|e| format!("Failed to read response: {e:?}"))?;
+            let raw_response =
+                usb_bulk_read_timeout(device_handle, Duration::from_millis(session.flash_timeout as u64)).map_err(|e| format!("Failed to read response (CP): {e:?}"))?;
 
-        check_response(&raw_response)?;
+            check_response(&raw_response)?;
+        } else {
+            let packet = APFlashSequencePacket {
+                packet_type: 0x66,
+                packet_command: if is_lz4 {0x07} else {0x03},
+                reserved: 0x00,
+                sequence_len: real_size as u32,
+                binary_type: partition.binary_type,
+                device_type: partition.device_type,
+                partition_identifier: partition.partition_identifier,
+                is_last_sequence: is_last_sequence as u32
+            };
+
+            usb_bulk_transfer(device_handle, &packet_to_bytes_pad(packet)?)
+                .map_err(|e| format!("Failed to send flash sequence end request packet (AP): {e:?}"))?;
+
+            let raw_response =
+                usb_bulk_read_timeout(device_handle, Duration::from_millis(session.flash_timeout as u64)).map_err(|e| format!("Failed to read response (AP): {e:?}"))?;
+
+            check_response(&raw_response)?;
+        }
     }
 
     Ok(())

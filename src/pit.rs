@@ -113,6 +113,7 @@ pub struct PitEntryV2 {
 #[derive(Clone)]
 pub struct Partition {
 	pub binary_type: BinaryType,
+    pub device_type: u32,
     pub partition_identifier: u32,
     pub partition_name: [u8; 32],
     pub file_name: [u8; 32],
@@ -170,6 +171,7 @@ pub fn parse_pit(pit_buffer: &Vec<u8>) -> Result<Vec<Partition>, Box<dyn core::e
 		for entry in entries {
 			partition_entries.push(Partition {
 				binary_type: entry.binary_type,
+                device_type: entry.device_type as u32,
 				partition_identifier: entry.partition_identifier,
 				partition_name: entry.partition_name,
 				file_name: entry.file_name,
@@ -182,6 +184,7 @@ pub fn parse_pit(pit_buffer: &Vec<u8>) -> Result<Vec<Partition>, Box<dyn core::e
 		for entry in entries {
 			partition_entries.push(Partition {
 				binary_type: entry.binary_type,
+                device_type: entry.device_type as u32,
 				partition_identifier: entry.partition_identifier,
 				partition_name: entry.partition_name,
 				file_name: entry.file_name,
