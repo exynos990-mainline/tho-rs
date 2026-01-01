@@ -8,24 +8,25 @@ use crate::pit::BinaryType;
 use crate::pit::parse_pit;
 use crate::pit::search_for_partition;
 use crate::file_type_detection::is_file_lz4;
+use crate::USBDevice;
 use crate::usb_bulk_read;
 use crate::usb_bulk_read_timeout;
 use crate::usb_bulk_transfer;
 use std::fs;
 use std::time::Duration;
 
-pub fn dump_device_info(device_handle: &mut rusb::DeviceHandle<rusb::GlobalContext>) -> Result<Vec<DeviceInfoData>> {
+pub fn dump_device_info(device: &mut USBDevice) -> Result<Vec<DeviceInfoData>> {
 	let packet = CommandPacket {
 		packet_type: 0x69,
 		packet_command: 0x00,
 	};
 
 	println!("Requesting device info size...");
-	usb_bulk_transfer(device_handle, &packet_to_bytes_pad(packet)?)
+	usb_bulk_transfer(device, &packet_to_bytes_pad(packet)?)
 		.map_err(|e| format!("Failed to send device info size request: {e:?}"))?;
 
 	let raw_response =
-		usb_bulk_read(device_handle).map_err(|e| format!("Failed to read response: {e:?}"))?;
+		usb_bulk_read(device).map_err(|e| format!("Failed to read response: {e:?}"))?;
 
 	check_response(&raw_response)?;
 
@@ -44,11 +45,11 @@ pub fn dump_device_info(device_handle: &mut rusb::DeviceHandle<rusb::GlobalConte
 			arg: n
 		};
 
-		usb_bulk_transfer(device_handle, &packet_to_bytes_pad(packet)?)
+		usb_bulk_transfer(device, &packet_to_bytes_pad(packet)?)
 			.map_err(|e| format!("Failed to send device info dump request: {e:?}"))?;
 
 		let raw_response =
-			usb_bulk_read(device_handle).map_err(|e| format!("Failed to read response: {e:?}"))?;
+			usb_bulk_read(device).map_err(|e| format!("Failed to read response: {e:?}"))?;
 
 		device_info_buffer[offset as usize .. (offset + 500) as usize].copy_from_slice(&raw_response);
 	}
@@ -59,29 +60,29 @@ pub fn dump_device_info(device_handle: &mut rusb::DeviceHandle<rusb::GlobalConte
 	};
 
 	println!("Ending dump request.");
-	usb_bulk_transfer(device_handle, &packet_to_bytes_pad(packet)?)
+	usb_bulk_transfer(device, &packet_to_bytes_pad(packet)?)
 		.map_err(|e| format!("Failed to send device info end dump request: {e:?}"))?;
 
 	let raw_response =
-		usb_bulk_read(device_handle).map_err(|e| format!("Failed to read response: {e:?}"))?;
+		usb_bulk_read(device).map_err(|e| format!("Failed to read response: {e:?}"))?;
 
 	check_response(&raw_response)?;
 	let device_info = parse_device_info_bytes(&device_info_buffer).map_err(|e| format!("Failed to parse device info: {e:?}"))?;
 	Ok(device_info)
 }
 
-pub fn dump_pit(device_handle: &mut rusb::DeviceHandle<rusb::GlobalContext>) -> Result<Vec<Partition>> {
+pub fn dump_pit(device: &mut USBDevice) -> Result<Vec<Partition>> {
 	let packet = CommandPacket {
 		packet_type: 0x65,
 		packet_command: 0x01,
 	};
 
 	println!("Requesting PIT size...");
-	usb_bulk_transfer(device_handle, &packet_to_bytes_pad(packet)?)
+	usb_bulk_transfer(device, &packet_to_bytes_pad(packet)?)
 		.map_err(|e| format!("Failed to send PIT size request: {e:?}"))?;
 
 	let raw_response =
-		usb_bulk_read(device_handle).map_err(|e| format!("Failed to read response: {e:?}"))?;
+		usb_bulk_read(device).map_err(|e| format!("Failed to read response: {e:?}"))?;
 
 	check_response(&raw_response)?;
 
@@ -100,11 +101,11 @@ pub fn dump_pit(device_handle: &mut rusb::DeviceHandle<rusb::GlobalContext>) -> 
 			arg: n
 		};
 
-		usb_bulk_transfer(device_handle, &packet_to_bytes_pad(packet)?)
+		usb_bulk_transfer(device, &packet_to_bytes_pad(packet)?)
 			.map_err(|e| format!("Failed to send PIT dump request: {e:?}"))?;
 
 		let raw_response =
-			usb_bulk_read(device_handle).map_err(|e| format!("Failed to read response: {e:?}"))?;
+			usb_bulk_read(device).map_err(|e| format!("Failed to read response: {e:?}"))?;
 
 		pit_buffer[offset as usize .. (offset + 500) as usize].copy_from_slice(&raw_response);
 	}
@@ -115,42 +116,42 @@ pub fn dump_pit(device_handle: &mut rusb::DeviceHandle<rusb::GlobalContext>) -> 
 	};
 
 	println!("Ending dump request.");
-	usb_bulk_transfer(device_handle, &packet_to_bytes_pad(packet)?)
+	usb_bulk_transfer(device, &packet_to_bytes_pad(packet)?)
 		.map_err(|e| format!("Failed to send PIT end dump request: {e:?}"))?;
 
 	let raw_response =
-		usb_bulk_read(device_handle).map_err(|e| format!("Failed to read response: {e:?}"))?;
+		usb_bulk_read(device).map_err(|e| format!("Failed to read response: {e:?}"))?;
 
 	check_response(&raw_response)?;
 	let partition_table = parse_pit(&pit_buffer)?;
 	Ok(partition_table)
 }
 
-pub fn reboot(device_handle: &mut rusb::DeviceHandle<rusb::GlobalContext>) -> Result<()> {
+pub fn reboot(device: &mut USBDevice) -> Result<()> {
 	let packet = CommandPacket {
 		packet_type: 0x67,
 		packet_command: 0x01,
 	};
 
 	println!("Sending reboot command");
-	usb_bulk_transfer(device_handle, &packet_to_bytes_pad(packet)?)
+	usb_bulk_transfer(device, &packet_to_bytes_pad(packet)?)
 		.map_err(|e| format!("Failed to send reboot packet: {e:?}"))?;
 
 	let raw_response =
-		usb_bulk_read(device_handle).map_err(|e| format!("Failed to read response: {e:?}"))?;
+		usb_bulk_read(device).map_err(|e| format!("Failed to read response: {e:?}"))?;
 
 	check_response(&raw_response)?;
 
 	Ok(())
 }
 
-fn handshake(device_handle: &mut rusb::DeviceHandle<rusb::GlobalContext>) -> Result<()> {
+fn handshake(device: &mut USBDevice) -> Result<()> {
 	println!("Handshaking...");
-	usb_bulk_transfer(device_handle, b"ODIN")
+	usb_bulk_transfer(device, b"ODIN")
 		.map_err(|e| format!("Failed to send handshake packet: {e:?}"))?;
 
 	let response =
-		usb_bulk_read(device_handle).map_err(|e| format!("Failed to read response: {e:?}"))?;
+		usb_bulk_read(device).map_err(|e| format!("Failed to read response: {e:?}"))?;
 
 	if response != b"LOKE" {
 		println!(
@@ -166,7 +167,7 @@ fn handshake(device_handle: &mut rusb::DeviceHandle<rusb::GlobalContext>) -> Res
 	Ok(())
 }
 
-fn flash_device(device_handle: &mut rusb::DeviceHandle<rusb::GlobalContext>, session: Session, data: Vec<u8>, partition: &Partition) -> Result<()> {
+fn flash_device(device: &mut USBDevice, session: Session, data: Vec<u8>, partition: &Partition) -> Result<()> {
 	let data_length = data.len();
 	let sequence_size = session.flash_packet_size * session.flash_sequence;
 	let is_lz4 = is_file_lz4(&data);
@@ -187,11 +188,11 @@ fn flash_device(device_handle: &mut rusb::DeviceHandle<rusb::GlobalContext>, ses
 	};
 
 	println!("Sending flash request command");
-	usb_bulk_transfer(device_handle, &packet_to_bytes_pad(packet)?)
+	usb_bulk_transfer(device, &packet_to_bytes_pad(packet)?)
 		.map_err(|e| format!("Failed to send flash request packet: {e:?}"))?;
 
 	let raw_response =
-		usb_bulk_read(device_handle).map_err(|e| format!("Failed to read response: {e:?}"))?;
+		usb_bulk_read(device).map_err(|e| format!("Failed to read response: {e:?}"))?;
 
 	check_response(&raw_response)?;
 
@@ -207,11 +208,11 @@ fn flash_device(device_handle: &mut rusb::DeviceHandle<rusb::GlobalContext>, ses
 		};
 
 		println!("Sending flash sequence request command");
-		usb_bulk_transfer(device_handle, &packet_to_bytes_pad(packet)?)
+		usb_bulk_transfer(device, &packet_to_bytes_pad(packet)?)
 			.map_err(|e| format!("Failed to send flash sequence request packet: {e:?}"))?;
 
 		let raw_response =
-			usb_bulk_read(device_handle).map_err(|e| format!("Failed to read response: {e:?}"))?;
+			usb_bulk_read(device).map_err(|e| format!("Failed to read response: {e:?}"))?;
 
 		check_response(&raw_response)?;
 
@@ -219,11 +220,11 @@ fn flash_device(device_handle: &mut rusb::DeviceHandle<rusb::GlobalContext>, ses
 
 		for (chunk_index, chunk) in chunks.clone().enumerate() {
 			println!("Sending file part {chunk_index}");
-			usb_bulk_transfer(device_handle, chunk)
+			usb_bulk_transfer(device, chunk)
 				.map_err(|e| format!("Failed to send flash sequence request packet: {e:?}"))?;
 
 			let raw_response =
-				usb_bulk_read(device_handle).map_err(|e| format!("Failed to read response: {e:?}"))?;
+				usb_bulk_read(device).map_err(|e| format!("Failed to read response: {e:?}"))?;
 
 			check_response(&raw_response)?;
 
@@ -241,11 +242,11 @@ fn flash_device(device_handle: &mut rusb::DeviceHandle<rusb::GlobalContext>, ses
 
 			println!("Sending last file part {chunk_index}");
 
-			usb_bulk_transfer(device_handle, &padded)
+			usb_bulk_transfer(device, &padded)
 				.map_err(|e| format!("Failed to send flash sequence request packet: {e:?}"))?;
 
 			let raw_response =
-				usb_bulk_read(device_handle).map_err(|e| format!("Failed to read response: {e:?}"))?;
+				usb_bulk_read(device).map_err(|e| format!("Failed to read response: {e:?}"))?;
 
 			check_response(&raw_response)?;
 
@@ -266,11 +267,11 @@ fn flash_device(device_handle: &mut rusb::DeviceHandle<rusb::GlobalContext>, ses
 				is_last_sequence: is_last_sequence as u32
 			};
 
-				usb_bulk_transfer(device_handle, &packet_to_bytes_pad(packet)?)
+				usb_bulk_transfer(device, &packet_to_bytes_pad(packet)?)
 				.map_err(|e| format!("Failed to send flash sequence end request packet (CP): {e:?}"))?;
 
 			let raw_response =
-				usb_bulk_read_timeout(device_handle, Duration::from_millis(session.flash_timeout as u64)).map_err(|e| format!("Failed to read response (CP): {e:?}"))?;
+				usb_bulk_read_timeout(device, Duration::from_millis(session.flash_timeout as u64)).map_err(|e| format!("Failed to read response (CP): {e:?}"))?;
 
 			check_response(&raw_response)?;
 		} else {
@@ -285,11 +286,11 @@ fn flash_device(device_handle: &mut rusb::DeviceHandle<rusb::GlobalContext>, ses
 				is_last_sequence: is_last_sequence as u32
 			};
 
-			usb_bulk_transfer(device_handle, &packet_to_bytes_pad(packet)?)
+			usb_bulk_transfer(device, &packet_to_bytes_pad(packet)?)
 				.map_err(|e| format!("Failed to send flash sequence end request packet (AP): {e:?}"))?;
 
 			let raw_response =
-				usb_bulk_read_timeout(device_handle, Duration::from_millis(session.flash_timeout as u64)).map_err(|e| format!("Failed to read response (AP): {e:?}"))?;
+				usb_bulk_read_timeout(device, Duration::from_millis(session.flash_timeout as u64)).map_err(|e| format!("Failed to read response (AP): {e:?}"))?;
 
 			check_response(&raw_response)?;
 		}
@@ -298,7 +299,7 @@ fn flash_device(device_handle: &mut rusb::DeviceHandle<rusb::GlobalContext>, ses
 	Ok(())
 }
 
-fn begin_session(device_handle: &mut rusb::DeviceHandle<rusb::GlobalContext>) -> Result<Session> {
+fn begin_session(device: &mut USBDevice) -> Result<Session> {
 	let packet = SessionPacket {
 		packet_type: 0x64,
 		packet_command: 0x00,
@@ -306,11 +307,11 @@ fn begin_session(device_handle: &mut rusb::DeviceHandle<rusb::GlobalContext>) ->
 	};
 
 	println!("Beginning session");
-	usb_bulk_transfer(device_handle, &packet_to_bytes_pad(packet)?)
+	usb_bulk_transfer(device, &packet_to_bytes_pad(packet)?)
 		.map_err(|e| format!("Failed to send begin session packet: {e:?}"))?;
 
 	let raw_response =
-		usb_bulk_read(device_handle).map_err(|e| format!("Failed to read response: {e:?}"))?;
+		usb_bulk_read(device).map_err(|e| format!("Failed to read response: {e:?}"))?;
 
 	check_response(&raw_response)?;
 	let session = parse_session_response(&raw_response)?;
@@ -329,11 +330,11 @@ fn begin_session(device_handle: &mut rusb::DeviceHandle<rusb::GlobalContext>) ->
 
 		println!("Sending file part size of {}", session.flash_packet_size);
 
-		usb_bulk_transfer(device_handle, &packet_to_bytes_pad(packet)?)
+		usb_bulk_transfer(device, &packet_to_bytes_pad(packet)?)
 			.map_err(|e| format!("Failed to send file part packet: {e:?}"))?;
 
 		let raw_response =
-			usb_bulk_read(device_handle).map_err(|e| format!("Failed to read response: {e:?}"))?;
+			usb_bulk_read(device).map_err(|e| format!("Failed to read response: {e:?}"))?;
 
 		check_response(&raw_response)?;
 	}
@@ -341,35 +342,35 @@ fn begin_session(device_handle: &mut rusb::DeviceHandle<rusb::GlobalContext>) ->
 	Ok(session)
 }
 
-fn end_session(device_handle: &mut rusb::DeviceHandle<rusb::GlobalContext>) -> Result<()> {
+fn end_session(device: &mut USBDevice) -> Result<()> {
 	let packet = CommandPacket {
 		packet_type: 0x67,
 		packet_command: 0x00,
 	};
 
     println!("Ending session");
-	usb_bulk_transfer(device_handle, &packet_to_bytes_pad(&packet)?)
+	usb_bulk_transfer(device, &packet_to_bytes_pad(&packet)?)
 		.map_err(|e| format!("Failed to send end session packet: {e:?}"))?;
 
 	let raw_response =
-		usb_bulk_read(device_handle).map_err(|e| format!("Failed to read response: {e:?}"))?;
+		usb_bulk_read(device).map_err(|e| format!("Failed to read response: {e:?}"))?;
 
 	check_response(&raw_response)?;
 
 	Ok(())
 }
 
-pub fn initialize(device_handle: &mut rusb::DeviceHandle<rusb::GlobalContext>) -> Result<()> {
-	handshake(device_handle)?;
-	let session = begin_session(device_handle)?;
+pub fn initialize(device: &mut USBDevice) -> Result<()> {
+	handshake(device)?;
+	let session = begin_session(device)?;
 
-	for device_info_item in dump_device_info(device_handle)? {
+	for device_info_item in dump_device_info(device)? {
 		if device_info_item.info_type == DeviceInfoType::ModelName {
 			println!("Model Name: {}", String::from_utf8_lossy(&device_info_item.data));
 		}
 	}
 
-	let partitions = dump_pit(device_handle)?;
+	let partitions = dump_pit(device)?;
 
 	println!("Flashing lk3rd v1.0");
 
@@ -383,9 +384,9 @@ pub fn initialize(device_handle: &mut rusb::DeviceHandle<rusb::GlobalContext>) -
 
 	println!("found boot");
 
-	flash_device(device_handle, session, lk3rd, &boot);
-	end_session(device_handle);
-	reboot(device_handle).expect("Failed to reboot device.");
+	flash_device(device, session, lk3rd, &boot);
+	end_session(device);
+	reboot(device).expect("Failed to reboot device.");
 
 	Ok(())
 }
